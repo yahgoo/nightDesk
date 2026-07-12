@@ -70,6 +70,31 @@ All four power-up surfaces are wired and exercised by `scripts/verify_integratio
 python scripts/verify_integrations.py   # reports configured + attempts real calls
 ```
 
+## Deploy (ship to a live URL)
+
+The app is packaged for any container/long-running host:
+
+```bash
+# Container
+docker build -t nightdesk . && docker run -p 8000:8000 --env-file .env nightdesk
+
+# Or a PaaS (Render/Fly/Railway/Heroku) — Procfile launches the FastAPI server
+git push   # host builds from Dockerfile / Procfile, exposes $PORT
+```
+
+Then point Telegram at the public URL:
+
+- Webhook mode: `POST https://<your-host>/webhook/telegram` (configure via BotFather or your bot setup).
+- Or polling mode: run `python -m app.telegram_bot` as a separate worker.
+
+The Cloudflare dashboard (`cloudflare/`) deploys independently:
+
+```bash
+wrangler pages deploy cloudflare/public   # set BACKEND_URL to the host above
+```
+
+Health: `GET /health` → `{"status":"ok"}`. Status: `GET /api/status`.
+
 ## Status / honesty note
 
 When external services (Hermes gateway, Convex, LLM keys) are not configured, the
