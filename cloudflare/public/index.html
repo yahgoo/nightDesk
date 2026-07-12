@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NightDesk — Status</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-sans-serif, system-ui, sans-serif; background:#0b1020; color:#e6e9f0; margin:0; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#8b93a7; font-size:13px; margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; max-width:760px; }
+  .card { background:#141b30; border:1px solid #243049; border-radius:10px; padding:14px 16px; }
+  .card .k { font-size:12px; color:#8b93a7; }
+  .card .v { font-size:15px; font-weight:600; margin-top:6px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px; vertical-align:middle; }
+  .on { background:#3ddc84; } .off { background:#ff6b6b; } .unknown { background:#f0a500; }
+  .updated { margin-top:18px; color:#8b93a7; font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>NightDesk</h1>
+  <div class="sub">After-hours booking nurturer for heartland Singapore SMEs — live status</div>
+  <div class="grid" id="cards"></div>
+  <div class="updated" id="updated">loading…</div>
+  <script>
+    const flags = [
+      ["gateway_configured", "SME Portal Gateway"],
+      ["convex_configured", "Convex Persistence"],
+      ["llm_configured", "LLM (hy3 / OpenAI)"],
+      ["tts_configured", "ElevenLabs Voice"],
+    ];
+    async function refresh() {
+      let data = { staged: true };
+      try { data = await (await fetch("/api/status")).json(); } catch (e) {}
+      const cards = flags.map(([k, label]) => {
+        const ok = data[k] === true;
+        const cls = data.staged ? "unknown" : (ok ? "on" : "off");
+        const txt = data.staged ? "unknown" : (ok ? "connected" : "not configured");
+        return '<div class="card"><div class="k">' + label + '</div>' +
+               '<div class="v"><span class="dot ' + cls + '"></span>' + txt + '</div></div>';
+      }).join("");
+      document.getElementById("cards").innerHTML = cards;
+      document.getElementById("updated").textContent =
+        "last updated " + new Date().toLocaleTimeString() +
+        (data.staged ? " (backend unreachable — staged view)" : "");
+    }
+    refresh(); setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

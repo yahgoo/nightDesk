@@ -48,6 +48,28 @@ See `.env.example` — `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `TELEGRAM_BOT_TOK
 `LINKUP_API_KEY`, `CLOUDFLARE_API_TOKEN`, `DODO_API_KEY` (stretch), plus
 `HERMES_GATEWAY_URL` for the remote portal gateway.
 
+## Integrations (buildathon power-ups)
+
+All four power-up surfaces are wired and exercised by `scripts/verify_integrations.py`
+(real calls when credentials are present, honest `staged` status otherwise):
+
+- **Convex** — `app/convex_client.py` writes `bookings`, `revenueEvents`, `agentRunLogs`.
+  Schema + mutations live in `convex/`. Deploy with `npx convex dev` (needs
+  `CONVEX_URL` / `CONVEX_DEPLOYMENT`).
+- **ElevenLabs** — `BookingSpecialist._voice_confirm` generates a voice-note
+  confirmation when `ELEVENLABS_API_KEY` is set.
+- **LinkUp** — `BookingSpecialist._linkup_fallback` does an out-of-menu lookup when
+  `LINKUP_API_KEY` is set.
+- **Cloudflare** — the status/metrics dashboard lives in `cloudflare/` (static
+  `public/index.html` + `functions/api/status.js` proxy). Deploy with
+  `wrangler pages deploy cloudflare/public` (set `BACKEND_URL` to the live backend).
+
+## Verify integrations
+
+```bash
+python scripts/verify_integrations.py   # reports configured + attempts real calls
+```
+
 ## Status / honesty note
 
 When external services (Hermes gateway, Convex, LLM keys) are not configured, the
