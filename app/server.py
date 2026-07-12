@@ -37,6 +37,7 @@ async def status() -> dict[str, Any]:
             os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
         ),
         "tts_configured": bool(os.environ.get("ELEVENLABS_API_KEY")),
+        "telegram_configured": bool(os.environ.get("TELEGRAM_BOT_TOKEN")),
     }
 
 
