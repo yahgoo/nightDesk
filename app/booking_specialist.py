@@ -15,8 +15,8 @@ from typing import Any
 import httpx
 
 from app.convex_client import create_booking as convex_create_booking
-from app.hermes_client import cancel_booking, create_booking, reschedule_booking
-from app.llm_client import call_model
+from app.hermes_client import cancel_booking, check_slots, create_booking, reschedule_booking
+from app.llm_client import OPENAI_API_KEY, OPENROUTER_API_KEY, call_model
 from app.logging_utils import log_event
 
 ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
@@ -52,20 +52,81 @@ class BookingSpecialist:
         return "Sorry, I couldn't process that request."
 
     async def _extract(self, text: str) -> dict[str, Any]:
-        raw = await call_model(EXTRACTION_PROMPT, text, json_mode=True)
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return {
-                "service": None, "date": None, "time": None,
-                "urgency": "normal", "customer_name": None,
-                "out_of_menu": False, "missing": ["service", "date", "time"],
-            }
+        if OPENROUTER_API_KEY or OPENAI_API_KEY:
+            raw = await call_model(EXTRACTION_PROMPT, text, json_mode=True)
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return self._extract_deterministic(text)
+
+    def _extract_deterministic(self, text: str) -> dict[str, Any]:
+        import datetime
+        import re
+
+        t = text.lower()
+        service = None
+        for kw, name in (
+            ("tcm", "TCM consultation"),
+            ("acupuncture", "acupuncture"),
+            ("massage", "massage therapy"),
+            ("dentist", "dental checkup"),
+            ("dental", "dental checkup"),
+            ("tuition", "tuition"),
+            ("math", "math tuition"),
+        ):
+            if kw in t:
+                service = name
+                break
+        # time: "9pm", "9:30 pm", "21:00"
+        time = None
+        m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", t)
+        if m:
+            h = int(m.group(1))
+            mm = int(m.group(2) or 0)
+            if m.group(3) == "pm" and h != 12:
+                h += 12
+            if m.group(3) == "am" and h == 12:
+                h = 0
+            time = f"{h:02d}:{mm:02d}"
+        elif re.search(r"\d{1,2}:\d{2}", t):
+            time = re.search(r"\d{1,2}:\d{2}", t).group(0)
+        # date: tomorrow / today / weekday name
+        date = None
+        today = datetime.date.today()
+        if "tomorrow" in t:
+            date = (today + datetime.timedelta(days=1)).isoformat()
+        elif "today" in t:
+            date = today.isoformat()
+        else:
+            wdays = ["monday", "tuesday", "wednesday", "thursday",
+                     "friday", "saturday", "sunday"]
+            for i, wd in enumerate(wdays):
+                if wd in t:
+                    days_ahead = (i - today.weekday()) % 7 or 7
+                    date = (today + datetime.timedelta(days=days_ahead)).isoformat()
+                    break
+        urgency = "high" if any(k in t for k in
+                                ("urgent", "asap", "tonight", "now", "emergency")) else "normal"
+        return {
+            "service": service, "date": date, "time": time,
+            "urgency": urgency, "customer_name": None,
+            "out_of_menu": False, "missing": [],
+        }
 
     async def _new_booking(self, text: str, telegram_user_id: str) -> str:
         details = await self._extract(text)
         if details.get("out_of_menu"):
             await self._linkup_fallback(text, details)
+
+        # Happy path: confirm the requested slot is available via the gateway
+        # before writing the booking (simulates a real SME-portal slot check).
+        slots = await check_slots(telegram_user_id or "default", details.get("date") or "")
+        log_event(
+            "booking_specialist", "slots_checked",
+            {"requested": f"{details.get('date')}T{details.get('time')}",
+             "slots": slots}, intent="new_booking",
+        )
 
         result = await create_booking({
             "service": details.get("service"),
